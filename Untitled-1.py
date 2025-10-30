@@ -10,7 +10,8 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command, Text, StateFilter
+from aiogram.filters import Command, StateFilter
+from aiogram.filters.text import Text
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
