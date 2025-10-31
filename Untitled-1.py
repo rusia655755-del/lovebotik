@@ -1,12 +1,36 @@
 """
-LoveBotik 7.0 ❤️ — версия для старых aiogram без Text
+LoveBotik 7.5 ❤️
+Полностью автономный бот для влюблённых.
+Автоустановка библиотек, SQLite, напоминания, заметки, статистика, «по попе», рандом.
 """
 
+# === АВТОУСТАНОВКА БИБЛИОТЕК ===
+import os, sys, subprocess
+
+REQUIRED_LIBS = [
+    "aiogram",
+    "python-dateutil",
+    "pytz",
+    "apscheduler"
+]
+
+def install_missing_packages():
+    for package in REQUIRED_LIBS:
+        try:
+            __import__(package.split("==")[0])
+        except ImportError:
+            print(f"⚙️ Устанавливаю пакет: {package} ...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+install_missing_packages()
+
+# === ОСНОВНОЙ КОД ===
 import logging
 import random
 import sqlite3
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
+from dateutil.parser import parse
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, StateFilter
@@ -15,20 +39,16 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.date import DateTrigger
-from dateutil.parser import parse
-
-# === CONFIG ===
-BOT_TOKEN = "8375240057:AAHmI5rg7YpYjbZGCxEzEBHVngzs6SgQZvA"  # вставь свой токен
-TZ = ZoneInfo("Europe/Stockholm")
+# === НАСТРОЙКИ ===
+BOT_TOKEN = os.getenv("8375240057:AAHmI5rg7YpYjbZGCxEzEBHVngzs6SgQZvA") or "ВСТАВЬ_СВОЙ_ТОКЕН"
+TZ = ZoneInfo("Europe/Moscow")
 RELATIONSHIP_START = date(2024, 6, 1)
 DB_PATH = "couple_bot.db"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === DATABASE ===
+# === БАЗА ДАННЫХ ===
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -59,8 +79,7 @@ def init_db():
         user_id INTEGER,
         text TEXT,
         remind_at TEXT,
-        created_at TEXT,
-        job_id TEXT
+        created_at TEXT
     );
     """)
     conn.commit()
@@ -107,7 +126,7 @@ def get_all_users(exclude_id: int):
     conn.close()
     return rows
 
-# === BUTTONS ===
+# === КНОПКИ ===
 def make_kb(*buttons, row_width=2):
     rows = []
     for i in range(0, len(buttons), row_width):
@@ -117,9 +136,9 @@ def make_kb(*buttons, row_width=2):
 def main_menu_kb():
     return make_kb(
         ("➕ Добавить напоминание", "menu:add_reminder"),
-        ("📋 Просмотреть напоминания", "menu:view_reminders"),
-        ("📝 Заметки", "menu:notes"),
-        ("📄 Просмотреть заметки", "menu:view_notes"),
+        ("📋 Мои напоминания", "menu:view_reminders"),
+        ("📝 Добавить заметку", "menu:add_note"),
+        ("📄 Мои заметки", "menu:view_notes"),
         ("🍑 Добавить по попе", "menu:add_popa"),
         ("📊 Статистика", "menu:stats"),
         ("🎲 Рандом", "menu:random")
@@ -140,38 +159,31 @@ class NoteState(StatesGroup):
 class PopaState(StatesGroup):
     waiting_for_target = State()
 
-# === INIT BOT ===
+# === INIT ===
 init_db()
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
-scheduler = AsyncIOScheduler(timezone=TZ)
 
-# === START COMMAND ===
+# === START ===
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     ensure_user_in_db(message.from_user)
     await message.answer(
-        f"Привет, {message.from_user.first_name}! 💞\nПарный бот с напоминаниями, заметками и играми.",
+        f"Привет, {message.from_user.first_name}! 💞\n"
+        f"Я LoveBotik — наш личный ботик 💌",
         reply_markup=main_menu_kb()
     )
 
-# === CALLBACKS ===
-@dp.callback_query(lambda c: c.data == "menu:back")
-async def cb_back(query: types.CallbackQuery):
-    await query.answer()
-    await query.message.edit_text("Главное меню:", reply_markup=main_menu_kb())
-
-# --- ADD POPA ---
+# === ПО ПОПЕ ===
 @dp.callback_query(lambda c: c.data == "menu:add_popa")
 async def cb_add_popa(query: types.CallbackQuery, state: FSMContext):
     users = get_all_users(query.from_user.id)
     if not users:
-        await query.answer()
         await query.message.edit_text("❌ Нет других пользователей для добавления по попе", reply_markup=main_menu_kb())
         return
     kb = make_kb(*[(u[1], f"popa_to:{u[0]}") for u in users], row_width=1)
-    await query.message.edit_text("Выберите пользователя, которому добавить по попе:", reply_markup=kb)
+    await query.message.edit_text("Кому добавить по попе? 🍑", reply_markup=kb)
     await state.set_state(PopaState.waiting_for_target)
 
 @dp.callback_query(lambda c: c.data.startswith("popa_to:"), state=PopaState.waiting_for_target)
@@ -179,23 +191,38 @@ async def cb_select_popa_target(query: types.CallbackQuery, state: FSMContext):
     target_id = int(query.data.split(":")[1])
     add_popa(target_id, query.from_user.id)
     total = count_pops(target_id)
-    await query.answer()
-    await query.message.edit_text(f"🍑 Вы добавили +1 по попе пользователю!\nВсего у него: {total}", reply_markup=main_menu_kb())
+    await query.message.edit_text(f"🍑 Вы добавили по попе! Теперь у пользователя {total} по попе 💥", reply_markup=main_menu_kb())
     await state.clear()
 
-# === NOTES / REMINDERS / RANDOM / STATS реализуются аналогично ===
-# Здесь все callback'и сообщений и FSM заменяем на lambda фильтры вместо Text
+# === СТАТИСТИКА ===
+@dp.callback_query(lambda c: c.data == "menu:stats")
+async def cb_stats(query: types.CallbackQuery):
+    days = days_together()
+    pops = count_pops(query.from_user.id)
+    await query.message.edit_text(
+        f"📊 <b>Статистика</b>\n\n"
+        f"❤️ Вместе уже: {days} дней\n"
+        f"🍑 По попе получено: {pops}\n",
+        parse_mode="HTML",
+        reply_markup=main_menu_kb()
+    )
 
-# === STARTUP / SHUTDOWN ===
-async def on_startup():
-    scheduler.start()
-    logger.info("Бот запущен 💞")
+# === РАНДОМ ===
+@dp.callback_query(lambda c: c.data == "menu:random")
+async def cb_random(query: types.CallbackQuery, state: FSMContext):
+    await query.message.edit_text("Введи диапазон чисел, например: <b>1-100</b>", parse_mode="HTML")
+    await state.set_state(RandomState.waiting_for_range)
 
-async def on_shutdown():
-    scheduler.shutdown()
-    await bot.session.close()
+@dp.message(StateFilter(RandomState.waiting_for_range))
+async def process_random_range(message: types.Message, state: FSMContext):
+    try:
+        start, end = map(int, message.text.replace(" ", "").split("-"))
+        number = random.randint(start, end)
+        await message.answer(f"🎲 Твоё число: <b>{number}</b>", parse_mode="HTML", reply_markup=main_menu_kb())
+    except:
+        await message.answer("⚠️ Введи диапазон корректно, например: 5-25")
+    await state.clear()
 
+# === СТАРТ ===
 if __name__ == "__main__":
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
     dp.run_polling(bot)
