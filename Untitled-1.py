@@ -40,7 +40,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # === НАСТРОЙКИ ===
-BOT_TOKEN = os.getenv("8375240057:AAHmI5rg7YpYjbZGCxEzEBHVngzs6SgQZvA") or "ВСТАВЬ_СВОЙ_ТОКЕН"
+BOT_TOKEN = "8375240057:AAHmI5rg7YpYjbZGCxEzEBHVngzs6SgQZvA"
 TZ = ZoneInfo("Europe/Moscow")
 RELATIONSHIP_START = date(2024, 6, 1)
 DB_PATH = "couple_bot.db"
